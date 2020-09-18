@@ -17,11 +17,23 @@ static const std::string specials = "!\"#$%&'()*+,-./:;<=>?@[\\]^`{|}~";
 
 constexpr const char *diff_color(diff_t d) {
   switch (d) {
-    case diff_t::SAME : return "\033[0m";
-    case diff_t::ADDED : return "\033[1;31m";
-    case diff_t::CHANGED : return "\033[1;30;43m";
+  case diff_t::SAME:
+    return "\033[0m";
+  case diff_t::ADDED:
+    return "\033[41;37;1m";
+  case diff_t::CHANGED:
+    return "\033[1;30;43m";
   }
   return "";
+}
+
+std::string replace_all(std::string s, const std::string &c,
+                        const std::string &repl) {
+  for (size_t i = s.find(c); i != std::string::npos;
+       i = s.find(c, i + repl.size())) {
+    s.replace(i, c.size(), repl);
+  }
+  return s;
 }
 
 struct file_t {
@@ -87,10 +99,17 @@ struct file_t {
 
   const key_t &operator[](size_t i) const { return content[i]; }
 
-  void print(const diffs_t &d) {
+  void print(const diffs_t &d, const diffs_t &wd) {
     assert(d.size() == content.size());
     for (size_t i = 0; i < content.size(); i++) {
-      std::cerr << spaces[i];
+      std::cerr << diff_color(wd[i]);
+      std::cerr << ((wd[i] == diff_t::SAME)
+                        ? spaces[i]
+                        : replace_all(
+                              replace_all(spaces[i], "\r\n", "\n"), "\n",
+                              std::string("\\n") + diff_color(diff_t::SAME) +
+                                  "\n" + diff_color(wd[i])));
+      std::cerr << diff_color(diff_t::SAME);
 
       std::cerr << diff_color(d[i])
                 << (content[i] >= 0 ? rev_mapping[content[i]]

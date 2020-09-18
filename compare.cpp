@@ -25,11 +25,12 @@ int main(int argc, char **argv) {
     return 100 - 100.0 * dist / (file1.content.size() + file2.content.size());
   };
 
-  auto [subs, add_del_dist, space_dist, diff1, diff2] = root_subs(file1, file2);
+  auto [subs, add_del_dist, space_dist, diff1, diff2, wdiff1, wdiff2] =
+      root_subs(file1, file2);
 
-  file1.print(diff1);
+  file1.print(diff1, wdiff1);
   std::cerr << "------------------------------------------------------------\n";
-  file2.print(diff2);
+  file2.print(diff2, wdiff2);
 
   int edit_distance = edit_dist(file1, file2);
   std::cerr << "Edit dist: " << edit_distance << " ("

@@ -14,6 +14,8 @@ struct root_subs_t {
   size_t space_dist;
   diffs_t diff1;
   diffs_t diff2;
+  diffs_t wdiff1;
+  diffs_t wdiff2;
 };
 
 // Try to transform file1 into file2 by removing tokens or by substituing
@@ -43,7 +45,7 @@ root_subs_t root_subs(const file_t &file1, const file_t &file2) {
   size_t i2 = len2;
   size_t add_del_dist = 0;
   std::vector<key_t> s1, s2;
-  std::vector<size_t> si1, si2;
+  std::vector<int> si1, si2;
   diffs_t diff1, diff2;
   while (i1 > 0 && i2 > 0) {
     if (file1[i1 - 1] == file2[i2 - 1]) {
@@ -108,22 +110,26 @@ root_subs_t root_subs(const file_t &file1, const file_t &file2) {
   }
 
   size_t space_dist = len1 + len2 + 2;
-  for (size_t i = 0; i < si1.size(); i++) {
-    std::cerr << si1[i] << " " << rev_mapping[file1.content[si1[i]]] << " "
-              << si2[i] << std::endl;
-  }
+  diffs_t wdiff1(file1.spaces.size(), diff_t::ADDED);
+  diffs_t wdiff2(file2.spaces.size(), diff_t::ADDED);
   for (size_t i = 0; i < si1.size() - 1; i++) {
     if (si1[i] + 1 == si1[i + 1] && si2[i] + 1 == si2[i + 1]) {
-      if (file1.spaces[si1[i] + 1] == file2.spaces[si2[i] + 1])
+      if (file1.spaces[si1[i + 1]] == file2.spaces[si2[i + 1]]) {
         space_dist -= 2;
+        wdiff1[si1[i + 1]] = diff_t::SAME;
+        wdiff2[si2[i + 1]] = diff_t::SAME;
+      } else {
+        wdiff1[si1[i + 1]] = diff_t::CHANGED;
+        wdiff2[si2[i + 1]] = diff_t::CHANGED;
+      }
     }
   }
 
-  return {subs, add_del_dist, space_dist, diff1, diff2};
+  return {subs, add_del_dist, space_dist, diff1, diff2, wdiff1, wdiff2};
 }
 
 int edit_dist(const file_t &file1, const file_t &file2) {
-  auto [subs, dist, _1, _2, _3] = root_subs(file1, file2);
+  auto [subs, dist, _1, _2, _3, _4, _5] = root_subs(file1, file2);
   for (key_t i = 0; i < (key_t)subs.size(); i++) {
     for (key_t &k : subs[i]) {
       dist += (k != i);
