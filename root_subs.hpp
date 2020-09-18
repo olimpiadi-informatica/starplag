@@ -100,9 +100,9 @@ root_subs_t root_subs(const file_t &file1, const file_t &file2) {
   si1.push_back(len1);
   si2.push_back(len2);
 
-  subs_t subs(mapping.size());
+  subs_t subs(rev_mapping.size());
 
-  for (size_t i = 0; i < mapping.size(); i++) {
+  for (size_t i = 0; i < rev_mapping.size(); i++) {
     subs[i].push_back(i);
   }
   for (size_t i = 0; i < s1.size(); i++) {

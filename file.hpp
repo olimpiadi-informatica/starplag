@@ -4,6 +4,7 @@
 #include <fstream>
 #include <map>
 #include <string>
+#include <iostream>
 #include <vector>
 
 enum class diff_t { SAME, ADDED, CHANGED };
@@ -39,10 +40,12 @@ std::string replace_all(std::string s, const std::string &c,
 struct file_t {
   using content_t = std::vector<key_t>;
 
+  std::string path;
   content_t content;
   std::vector<std::string> spaces;
 
   file_t(std::string file) {
+    path = file;
     std::ifstream in(file);
     std::string str((std::istreambuf_iterator<char>(in)),
                     std::istreambuf_iterator<char>());
