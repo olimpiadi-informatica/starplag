@@ -88,6 +88,7 @@ struct file_t {
   const key_t &operator[](size_t i) const { return content[i]; }
 
   void print(const diffs_t &d) {
+    assert(d.size() == content.size());
     for (size_t i = 0; i < content.size(); i++) {
       std::cerr << spaces[i];
 
@@ -96,6 +97,7 @@ struct file_t {
                                     : specials.substr(-1 - content[i], 1))
                 << diff_color(diff_t::SAME);
     }
-    std::cerr << spaces.back() << std::endl;
+    if (!spaces.empty())
+      std::cerr << spaces.back() << std::endl;
   }
 };

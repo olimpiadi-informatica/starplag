@@ -1,7 +1,7 @@
-all: build/main
+all: build/compare
 
-build/main: main.cpp file.hpp root_subs.hpp subs_dist.hpp
+build/compare: compare.cpp file.hpp root_subs.hpp subs_dist.hpp
 	mkdir -p build
-	g++ -std=c++17 -O3 -Wall -Wextra main.cpp -o build/main
+	g++ -std=c++17 -g -O3 -Wall -Wextra compare.cpp -o build/compare
 
 .PHONY: all

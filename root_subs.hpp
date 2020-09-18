@@ -8,10 +8,17 @@
 
 using subs_t = std::vector<std::vector<key_t>>;
 
+struct root_subs_t {
+  subs_t subs;
+  size_t add_del_dist;
+  size_t space_dist;
+  diffs_t diff1;
+  diffs_t diff2;
+};
+
 // Try to transform file1 into file2 by removing tokens or by substituing
 // tokens. It returns the substitutions of each token.
-std::tuple<subs_t, size_t, diffs_t, diffs_t> root_subs(const file_t &file1,
-                                                       const file_t &file2) {
+root_subs_t root_subs(const file_t &file1, const file_t &file2) {
   size_t len1 = file1.content.size();
   size_t len2 = file2.content.size();
   std::vector<std::vector<size_t>> DP(len2 + 1, std::vector<size_t>(len1 + 1));
@@ -36,6 +43,7 @@ std::tuple<subs_t, size_t, diffs_t, diffs_t> root_subs(const file_t &file1,
   size_t i2 = len2;
   size_t add_del_dist = 0;
   std::vector<key_t> s1, s2;
+  std::vector<size_t> si1, si2;
   diffs_t diff1, diff2;
   while (i1 > 0 && i2 > 0) {
     if (file1[i1 - 1] == file2[i2 - 1]) {
@@ -47,6 +55,8 @@ std::tuple<subs_t, size_t, diffs_t, diffs_t> root_subs(const file_t &file1,
         --i1;
         --i2;
       }
+      si1.push_back(i1);
+      si2.push_back(i2);
       diff1.push_back(diff_t::SAME);
       diff2.push_back(diff_t::SAME);
     } else if (DP[i2][i1] == DP[i2 - 1][i1 - 1] + 1 && file1[i1 - 1] >= 0 &&
@@ -54,6 +64,8 @@ std::tuple<subs_t, size_t, diffs_t, diffs_t> root_subs(const file_t &file1,
       // subst token (not symbol)
       s1.push_back(file1[--i1]);
       s2.push_back(file2[--i2]);
+      si1.push_back(i1);
+      si2.push_back(i2);
       diff1.push_back(diff_t::CHANGED);
       diff2.push_back(diff_t::CHANGED);
     } else {
@@ -69,11 +81,22 @@ std::tuple<subs_t, size_t, diffs_t, diffs_t> root_subs(const file_t &file1,
     }
   }
   add_del_dist += i1 + i2;
+  while (i1--)
+    diff1.push_back(diff_t::ADDED);
+  while (i2--)
+    diff2.push_back(diff_t::ADDED);
 
   std::reverse(s1.begin(), s1.end());
   std::reverse(s2.begin(), s2.end());
   std::reverse(diff1.begin(), diff1.end());
   std::reverse(diff2.begin(), diff2.end());
+
+  si1.push_back(-1);
+  si2.push_back(-1);
+  std::reverse(si1.begin(), si1.end());
+  std::reverse(si2.begin(), si2.end());
+  si1.push_back(len1);
+  si2.push_back(len2);
 
   subs_t subs(mapping.size());
 
@@ -84,11 +107,23 @@ std::tuple<subs_t, size_t, diffs_t, diffs_t> root_subs(const file_t &file1,
     subs[s1[i]].push_back(s2[i]);
   }
 
-  return {subs, add_del_dist, diff1, diff2};
+  size_t space_dist = len1 + len2 + 2;
+  for (size_t i = 0; i < si1.size(); i++) {
+    std::cerr << si1[i] << " " << rev_mapping[file1.content[si1[i]]] << " "
+              << si2[i] << std::endl;
+  }
+  for (size_t i = 0; i < si1.size() - 1; i++) {
+    if (si1[i] + 1 == si1[i + 1] && si2[i] + 1 == si2[i + 1]) {
+      if (file1.spaces[si1[i] + 1] == file2.spaces[si2[i] + 1])
+        space_dist -= 2;
+    }
+  }
+
+  return {subs, add_del_dist, space_dist, diff1, diff2};
 }
 
 int edit_dist(const file_t &file1, const file_t &file2) {
-  auto [subs, dist, _1, _2] = root_subs(file1, file2);
+  auto [subs, dist, _1, _2, _3] = root_subs(file1, file2);
   for (key_t i = 0; i < (key_t)subs.size(); i++) {
     for (key_t &k : subs[i]) {
       dist += (k != i);
