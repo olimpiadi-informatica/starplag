@@ -163,6 +163,27 @@ int main(int argc, char **argv) {
   if (partial_lo.size() > MAX_RESULTS)
     partial_lo.erase(std::next(partial_lo.begin(), MAX_RESULTS),
                      partial_lo.end());
+  if (!partial_hi.empty()) {
+    auto &[perc, f1, f2] = *partial_hi.begin();
+    if (f1.rfind(soldir, 0) != 0) {
+      std::cerr << "\033[41;37;1mWARNING!\033[0m The snapshot is using a different directory with "
+                   "the solutions!"
+                << std::endl;
+      std::cerr
+          << "The snapshot is using: "
+          << std::filesystem::path(f1).parent_path().parent_path().string()
+          << std::endl;
+      std::cerr << "You are using: " << soldir << std::endl;
+      std::cerr << "Are you sure to continue? [yn] " << std::flush;
+      std::string prompt;
+      std::cin >> prompt;
+      if (prompt != "y") {
+        std::cerr << "quitting..." << std::endl;
+        return 1;
+      }
+    }
+  }
+
   // save partial results
   save_snap(resume_index, partial_hi, partial_lo, target_path + "/partial");
 
@@ -228,10 +249,9 @@ int main(int argc, char **argv) {
     using namespace std::chrono_literals;
     std::this_thread::sleep_for(1s);
   }
-  printf(
-      " pairs %8ld / %ld (%6.2f%%) | user %4ld / %4ld\033[J\n",
-      progress.load(), num_pairs, 0.0, global_pos.load() - nthreads,
-      ranking.size());
+  printf(" pairs %8ld / %ld (%6.2f%%) | user %4ld / %4ld\033[J\n",
+         progress.load(), num_pairs, 0.0, global_pos.load() - nthreads,
+         ranking.size());
 
   for (auto &thread : threads) {
     thread.join();
