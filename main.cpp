@@ -17,7 +17,7 @@ using info_t = std::tuple<float, std::string, std::string>;
 using queue_t = std::vector<info_t>;
 
 const size_t MAX_RESULTS = 500;
-const double SNAP_INTERVAL = 1;
+const double SNAP_INTERVAL = 0;
 const float SPACE_WEIGHT = 0.3;
 
 float smart_dist(const file_t &file1, const file_t &file2) {
@@ -55,14 +55,20 @@ void save_snap(size_t index, const T &hi, const T &lo, std::string path) {
 void worker(std::vector<std::vector<file_t>> *files_ptr, size_t cutoff,
             std::atomic<size_t> *global_pos, int wid,
             std::pair<queue_t, queue_t> *result, std::atomic<size_t> *progress,
-            std::string targetdir) {
+            size_t *current_index, std::string targetdir) {
   queue_t &hi = result->first;
   queue_t &lo = result->second;
   const std::vector<std::vector<file_t>> &files = *files_ptr;
 
   auto last_snap = get_time();
-  for (size_t index = (*global_pos)++; index < files.size();
-       index = (*global_pos)++) {
+  size_t &index = *current_index;
+
+  for (index = (*global_pos)++; index < files.size(); index = (*global_pos)++) {
+    auto now = get_time();
+    if (now - last_snap > SNAP_INTERVAL) {
+      last_snap = now;
+      save_snap(index, hi, lo, targetdir + "/snap" + std::to_string(wid));
+    }
     for (size_t j = index + 1; j < files.size(); j++) {
       info_t best = {-1, "", ""};
       for (const auto &f1 : files[index]) {
@@ -84,12 +90,9 @@ void worker(std::vector<std::vector<file_t>> *files_ptr, size_t cutoff,
         }
       }
     }
-    auto now = get_time();
-    if (now - last_snap > SNAP_INTERVAL) {
-      last_snap = now;
-      save_snap(index, hi, lo, targetdir + "/snap" + std::to_string(wid));
-    }
   }
+  save_snap(files.size() - 1, hi, lo,
+            targetdir + "/snap" + std::to_string(wid));
 }
 
 int main(int argc, char **argv) {
@@ -151,6 +154,8 @@ int main(int argc, char **argv) {
               << std::endl;
     read_snap(target_path + "/partial", true);
   }
+  if (resume_index == std::numeric_limits<size_t>::max())
+    resume_index = 0;
   // prune partial results
   if (partial_hi.size() > MAX_RESULTS)
     partial_hi.erase(std::next(partial_hi.begin(), MAX_RESULTS),
@@ -160,7 +165,6 @@ int main(int argc, char **argv) {
                      partial_lo.end());
   // save partial results
   save_snap(resume_index, partial_hi, partial_lo, target_path + "/partial");
-  resume_index++;
 
   std::cerr << "Starting from " << resume_index << std::endl;
 
@@ -183,13 +187,15 @@ int main(int argc, char **argv) {
   std::cerr << "Total files left: " << tot << std::endl;
 
   int nthreads = std::thread::hardware_concurrency();
+  std::cerr << "Using " << nthreads << " threads" << std::endl;
   std::vector<std::pair<queue_t, queue_t>> results(nthreads);
   std::vector<std::thread> threads;
+  std::vector<size_t> current_index(nthreads);
   std::atomic<size_t> progress(0), global_pos(resume_index);
   auto start = std::chrono::high_resolution_clock::now();
   for (int i = 0; i < nthreads; i++) {
     threads.emplace_back(worker, &files, cutoff, &global_pos, i, &results[i],
-                         &progress, target_path);
+                         &progress, &current_index[i], target_path);
   }
 
   size_t num_pairs = 0;
@@ -211,18 +217,24 @@ int main(int argc, char **argv) {
       int m = (delta % 3600) / 60;
       int s = delta % 60;
       printf(" pairs %8ld / %ld (%6.2f%%) | user %4ld / %4ld | ETA "
-             "%4d:%02d:%02d\r",
+             "%4d:%02d:%02d | cur",
              progress.load(), num_pairs, progress * 100.0 / num_pairs,
              global_pos.load() - nthreads, ranking.size(), h, m, s);
+      for (auto index : current_index)
+        printf(" %ld", index);
+      printf("\r");
       fflush(stdout);
     }
     using namespace std::chrono_literals;
     std::this_thread::sleep_for(1s);
   }
-  printf("\n");
+  printf(
+      " pairs %8ld / %ld (%6.2f%%) | user %4ld / %4ld\033[J\n",
+      progress.load(), num_pairs, 0.0, global_pos.load() - nthreads,
+      ranking.size());
 
-  for (int i = 0; i < nthreads; i++) {
-    threads[i].join();
+  for (auto &thread : threads) {
+    thread.join();
   }
 
   for (auto &[hi, lo] : results) {

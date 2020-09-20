@@ -5,13 +5,19 @@
 #include "subs_dist.hpp"
 
 int main(int argc, char **argv) {
-  if (argc != 3) {
-    std::cerr << "Usage: " << argv[0] << " file1 file2" << std::endl;
+  if (argc != 3 && argc != 6) {
+    std::cerr << "Usage: " << argv[0] << " file1 file2 [diff1 diff2 meta]"
+              << std::endl;
     return 1;
   }
 
   file_t file1(argv[1]);
   file_t file2(argv[2]);
+
+  std::ofstream fdiff1(argc < 4 ? "/dev/stdout" : argv[3]);
+  std::ofstream fdiff2(argc < 4 ? "/dev/stdout" : argv[4]);
+  std::ofstream fmeta(argc < 4 ? "/dev/stdout" : argv[5]);
+
   std::cerr << "File 1: " << file1.content.size() << std::endl;
   std::cerr << "File 2: " << file2.content.size() << std::endl;
 
@@ -28,20 +34,20 @@ int main(int argc, char **argv) {
   auto [subs, add_del_dist, space_dist, diff1, diff2, wdiff1, wdiff2] =
       root_subs(file1, file2);
 
-  file1.print(diff1, wdiff1);
+  file1.print(fdiff1, diff1, wdiff1);
   std::cerr << "------------------------------------------------------------\n";
-  file2.print(diff2, wdiff2);
+  file2.print(fdiff2, diff2, wdiff2);
 
   int edit_distance = edit_dist(file1, file2);
-  std::cerr << "Edit dist: " << edit_distance << " ("
-            << perc_dist(edit_distance) << "%)" << std::endl;
+  fmeta << "Edit dist: " << edit_distance << " (" << perc_dist(edit_distance)
+        << "%)\t\t";
 
   int token_dist = add_del_dist + subs_dist(subs);
-  std::cerr << "Token dist: " << token_dist << " (" << perc_dist(token_dist)
-            << "%)" << std::endl;
-  std::cerr << "Space dist: " << space_dist << " (" << perc_dist(space_dist)
-            << "%)" << std::endl;
+  fmeta << "Token dist: " << token_dist << " (" << perc_dist(token_dist)
+        << "%)\t\t";
+  fmeta << "Space dist: " << space_dist << " (" << perc_dist(space_dist)
+        << "%)\n";
   double dist = token_dist * 0.7 + space_dist * 0.3;
-  std::cerr << "Dist: " << dist << " (" << perc_dist(dist) << "%)" << std::endl;
+  fmeta << "Dist: " << dist << " (" << perc_dist(dist) << "%)" << std::endl;
   std::cout << perc_dist(dist) << std::endl;
 }

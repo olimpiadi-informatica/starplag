@@ -2,9 +2,9 @@
 
 #include <cassert>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <string>
-#include <iostream>
 #include <vector>
 
 enum class diff_t { SAME, ADDED, CHANGED };
@@ -102,24 +102,25 @@ struct file_t {
 
   const key_t &operator[](size_t i) const { return content[i]; }
 
-  void print(const diffs_t &d, const diffs_t &wd) {
+  void print(std::ofstream &out, const diffs_t &d, const diffs_t &wd) {
     assert(d.size() == content.size());
-    for (size_t i = 0; i < content.size(); i++) {
-      std::cerr << diff_color(wd[i]);
-      std::cerr << ((wd[i] == diff_t::SAME)
-                        ? spaces[i]
-                        : replace_all(
-                              replace_all(spaces[i], "\r\n", "\n"), "\n",
-                              std::string("\\n") + diff_color(diff_t::SAME) +
-                                  "\n" + diff_color(wd[i])));
-      std::cerr << diff_color(diff_t::SAME);
+    out << "\033[1;4m==> " << path << " <==\033[0m" << std::endl << std::endl;
 
-      std::cerr << diff_color(d[i])
-                << (content[i] >= 0 ? rev_mapping[content[i]]
-                                    : specials.substr(-1 - content[i], 1))
-                << diff_color(diff_t::SAME);
+    for (size_t i = 0; i < content.size(); i++) {
+      out << diff_color(wd[i]);
+      out << ((wd[i] == diff_t::SAME)
+                  ? spaces[i]
+                  : replace_all(replace_all(spaces[i], "\r\n", "\n"), "\n",
+                                std::string("\\n") + diff_color(diff_t::SAME) +
+                                    "\n" + diff_color(wd[i])));
+      out << diff_color(diff_t::SAME);
+
+      out << diff_color(d[i])
+          << (content[i] >= 0 ? rev_mapping[content[i]]
+                              : specials.substr(-1 - content[i], 1))
+          << diff_color(diff_t::SAME);
     }
     if (!spaces.empty())
-      std::cerr << spaces.back() << std::endl;
+      out << spaces.back() << std::endl;
   }
 };
