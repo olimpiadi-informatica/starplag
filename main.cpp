@@ -50,17 +50,101 @@ bool ensure_snap_same_task(const partial_t &partial, std::string soldir) {
   return true;
 }
 
+std::vector<file_t> read_templates(std::string templatedir) {
+  std::vector<file_t> templates;
+  for (auto &p : std::filesystem::directory_iterator(templatedir)) {
+    templates.emplace_back(p.path().string());
+  }
+  return templates;
+}
+
+template <typename T>
+std::tuple<int, int, int> compute_eta(T start, size_t progress, size_t total) {
+  int delta = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                  std::chrono::high_resolution_clock::now() - start)
+                  .count() /
+              1.0e9 * (total - progress) / progress;
+  int h = delta / 3600;
+  int m = (delta % 3600) / 60;
+  int s = delta % 60;
+  return {h, m, s};
+}
+
+file_list_t read_files(std::string soldir,
+                       const std::vector<std::string> &ranking,
+                       const std::vector<file_t> &templates,
+                       size_t resume_index) {
+  file_list_t files(ranking.size());
+  size_t num_files = 0;
+
+  for (size_t u = resume_index; u < ranking.size(); u++) {
+    for (const auto &path :
+         std::filesystem::directory_iterator(soldir + "/" + ranking[u])) {
+      const size_t THRESHOLD = 32 * 1024;
+      auto size = std::filesystem::file_size(path.path());
+      if (size <= THRESHOLD) {
+        file_t file(path.path());
+        files[u].emplace_back(file, 0);
+        num_files++;
+      } else {
+        std::cerr << "Ignoring too big file " << path.path().string() << ": "
+                  << size << " > " << THRESHOLD << std::endl;
+      }
+    }
+  }
+
+  std::cerr << "Comparing files with templates..." << std::endl;
+  std::atomic<size_t> pos(resume_index), files_done(0);
+  size_t nthreads = std::thread::hardware_concurrency();
+  std::vector<std::thread> threads;
+
+  for (size_t t = 0; t < nthreads; t++) {
+    threads.emplace_back([&files, &ranking, &templates, &pos, &files_done]() {
+      for (size_t u = pos++; u < ranking.size(); u = pos++) {
+        for (auto &[file, perc] : files[u]) {
+          for (const file_t &templ : templates) {
+            perc = std::max(perc, smart_dist(file, templ));
+          }
+        }
+        files_done += files[u].size();
+      }
+    });
+  }
+  auto start = std::chrono::high_resolution_clock::now();
+  while (files_done < num_files) {
+    if (files_done) {
+      auto [h, m, s] = compute_eta(start, files_done.load(), num_files);
+      fprintf(stderr,
+              "\033[J files %6ld / %6ld (%6.2f%%) | user %4ld / %4ld | ETA "
+              "%4d:%02d:%02d\r",
+              files_done.load(), num_files,
+              100.0 * files_done.load() / num_files, pos.load(), ranking.size(),
+              h, m, s);
+    }
+    using namespace std::chrono_literals;
+    std::this_thread::sleep_for(1s);
+  }
+  for (auto &thread : threads) {
+    thread.join();
+  }
+  fprintf(stderr, "\033[J files %6ld / %6ld (%6.2f%%) | user %4ld / %4ld\r",
+          num_files, num_files, 100.0, ranking.size(), ranking.size());
+  std::cerr << std::endl;
+  return files;
+}
+
 int main(int argc, char **argv) {
-  if (argc != 5) {
-    std::cerr << "Usage: " << argv[0] << " soldir ranking.txt cutoff target"
-              << std::endl;
+  if (argc != 6) {
+    std::cerr << "Usage: " << argv[0]
+              << " soldir templatedir ranking.txt cutoff target" << std::endl;
     return 1;
   }
 
   std::string soldir = argv[1];
-  std::string ranking_path = argv[2];
-  int cutoff = std::atoi(argv[3]);
-  std::string target_path = argv[4];
+  std::string templatedir = argv[2];
+  std::string ranking_path = argv[3];
+  int cutoff = std::atoi(argv[4]);
+  std::string target_path = argv[5];
 
   std::filesystem::create_directories(target_path);
 
@@ -101,26 +185,16 @@ int main(int argc, char **argv) {
   // save partial results
   save_snap(resume_index, partial_hi, partial_lo, target_path + "/partial");
 
-  std::cerr << "Starting from " << resume_index << std::endl;
+  std::cerr << "Reading template files..." << std::endl;
+  std::vector<file_t> templates = read_templates(templatedir);
 
-  std::vector<std::vector<file_t>> files(ranking.size());
-  int tot = 0;
+  std::cerr << "Reading solution files..." << std::endl;
+  file_list_t files = read_files(soldir, ranking, templates, resume_index);
 
-  for (size_t u = 0; u < ranking.size(); u++) {
-    for (const auto &path :
-         std::filesystem::directory_iterator(soldir + "/" + ranking[u])) {
-      const size_t THRESHOLD = 32 * 1024;
-      if (std::filesystem::file_size(path.path()) < THRESHOLD) {
-        files[u].emplace_back(path.path());
-        if (u > resume_index)
-          tot++;
-      }
-    }
-  }
   // files are read, since we don't want to print them this mapping is useless
   mapping.clear();
 
-  std::cerr << "Total files left: " << tot << std::endl;
+  std::cerr << "Starting from " << resume_index << std::endl;
 
   int nthreads = std::thread::hardware_concurrency();
   std::cerr << "Using " << nthreads << " threads" << std::endl;
@@ -139,6 +213,10 @@ int main(int argc, char **argv) {
 
   // meanwhile compute the total number of pairs to process
   size_t num_pairs = 0;
+  size_t tot = 0;
+  for (size_t i = resume_index; i < files.size(); i++) {
+    tot += files[i].size();
+  }
   for (size_t i = resume_index; i < files.size(); i++) {
     num_pairs += files[i].size() * (tot - files[i].size());
   }
@@ -151,13 +229,7 @@ int main(int argc, char **argv) {
   // start of the line
   while (progress < num_pairs) {
     if (progress) {
-      int delta = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                      std::chrono::high_resolution_clock::now() - start)
-                      .count() /
-                  1.0e9 * (num_pairs - progress) / progress;
-      int h = delta / 3600;
-      int m = (delta % 3600) / 60;
-      int s = delta % 60;
+      auto [h, m, s] = compute_eta(start, progress.load(), num_pairs);
       printf("\033[J pairs %8ld / %ld (%6.2f%%) | user %4ld / %4ld | ETA "
              "%4d:%02d:%02d | cur",
              progress.load(), num_pairs, progress * 100.0 / num_pairs,

@@ -1,14 +1,15 @@
 #pragma once
 
 #include "file.hpp"
-#include "snapshot.hpp"
 #include "smart_dist.hpp"
+#include "snapshot.hpp"
 #include <atomic>
 #include <chrono>
 #include <queue>
 #include <vector>
 
 using queue_t = std::vector<info_t>;
+using file_list_t = std::vector<std::vector<std::pair<file_t, float>>>;
 
 const double SNAP_INTERVAL = 0;
 
@@ -19,13 +20,13 @@ double get_time() {
          1.0e9;
 }
 
-void worker(std::vector<std::vector<file_t>> *files_ptr, size_t cutoff,
+void worker(file_list_t *files_ptr, size_t cutoff,
             std::atomic<size_t> *global_pos, int wid,
             std::pair<queue_t, queue_t> *result, std::atomic<size_t> *progress,
             size_t *current_index, std::string targetdir) {
   queue_t &hi = result->first;
   queue_t &lo = result->second;
-  const std::vector<std::vector<file_t>> &files = *files_ptr;
+  const file_list_t &files = *files_ptr;
 
   auto last_snap = get_time();
   size_t &index = *current_index;
@@ -38,9 +39,14 @@ void worker(std::vector<std::vector<file_t>> *files_ptr, size_t cutoff,
     }
     for (size_t j = index + 1; j < files.size(); j++) {
       info_t best = {-1, "", ""};
-      for (const auto &f1 : files[index]) {
-        for (const auto &f2 : files[j]) {
+      for (const auto &[f1, p1] : files[index]) {
+        for (const auto &[f2, p2] : files[j]) {
           float perc = smart_dist(f1, f2);
+          // the solutions are more similar to a template than they are between
+          // each other
+          if (perc < p1 || perc < p2) {
+            continue;
+          }
           if (perc > std::get<0>(best)) {
             best = {perc, f1.path, f2.path};
           }
