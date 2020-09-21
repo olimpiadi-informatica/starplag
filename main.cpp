@@ -1,6 +1,9 @@
 #include "file.hpp"
 #include "root_subs.hpp"
+#include "smart_dist.hpp"
+#include "snapshot.hpp"
 #include "subs_dist.hpp"
+#include "worker.hpp"
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -13,86 +16,38 @@
 #include <tuple>
 #include <vector>
 
-using info_t = std::tuple<float, std::string, std::string>;
-using queue_t = std::vector<info_t>;
-
-const size_t MAX_RESULTS = 500;
-const double SNAP_INTERVAL = 0;
-const float SPACE_WEIGHT = 0.3;
-
-float smart_dist(const file_t &file1, const file_t &file2) {
-  auto [subs, add_del_dist, space_dist, _1, _2, _3, _4] =
-      root_subs(file1, file2);
-  int token_dist = add_del_dist + subs_dist(subs);
-  float token_perc =
-      100 - 100.0 * token_dist / (file1.content.size() + file2.content.size());
-  float space_perc =
-      100 - 100.0 * space_dist / (file1.spaces.size() + file2.spaces.size());
-  return token_perc * (1 - SPACE_WEIGHT) + space_perc * SPACE_WEIGHT;
-}
-
-double get_time() {
-  return std::chrono::duration_cast<std::chrono::nanoseconds>(
-             std::chrono::high_resolution_clock::now().time_since_epoch())
-             .count() /
-         1.0e9;
-}
-
-template <typename T>
-void save_snap(size_t index, const T &hi, const T &lo, std::string path) {
-  std::string temp_snap = path + "_temp";
-  std::ofstream snap(temp_snap);
-  snap << index << " " << hi.size() << " " << lo.size() << std::endl;
-  for (const auto &[a, b, c] : hi) {
-    snap << a << " " << b << " " << c << std::endl;
+std::vector<std::string> read_ranking(std::string ranking_path) {
+  std::vector<std::string> ranking;
+  std::ifstream ranking_file(ranking_path);
+  std::string user;
+  while (ranking_file >> user) {
+    ranking.push_back(user);
   }
-  for (const auto &[a, b, c] : lo) {
-    snap << a << " " << b << " " << c << std::endl;
-  }
-  std::filesystem::rename(temp_snap, path);
+  return ranking;
 }
 
-void worker(std::vector<std::vector<file_t>> *files_ptr, size_t cutoff,
-            std::atomic<size_t> *global_pos, int wid,
-            std::pair<queue_t, queue_t> *result, std::atomic<size_t> *progress,
-            size_t *current_index, std::string targetdir) {
-  queue_t &hi = result->first;
-  queue_t &lo = result->second;
-  const std::vector<std::vector<file_t>> &files = *files_ptr;
-
-  auto last_snap = get_time();
-  size_t &index = *current_index;
-
-  for (index = (*global_pos)++; index < files.size(); index = (*global_pos)++) {
-    auto now = get_time();
-    if (now - last_snap > SNAP_INTERVAL) {
-      last_snap = now;
-      save_snap(index, hi, lo, targetdir + "/snap" + std::to_string(wid));
-    }
-    for (size_t j = index + 1; j < files.size(); j++) {
-      info_t best = {-1, "", ""};
-      for (const auto &f1 : files[index]) {
-        for (const auto &f2 : files[j]) {
-          float perc = smart_dist(f1, f2);
-          if (perc > std::get<0>(best)) {
-            best = {perc, f1.path, f2.path};
-          }
-        }
-      }
-      *progress += files[index].size() * files[j].size();
-      if (std::get<0>(best) >= 0) {
-        auto &pq = index < cutoff ? hi : lo;
-        pq.push_back(best);
-        std::push_heap(pq.begin(), pq.end(), std::greater<info_t>());
-        if (pq.size() > MAX_RESULTS) {
-          std::pop_heap(pq.begin(), pq.end(), std::greater<info_t>());
-          pq.pop_back();
-        }
+bool ensure_snap_same_task(const partial_t &partial, std::string soldir) {
+  if (!partial.empty()) {
+    auto &[perc, f1, f2] = *partial.begin();
+    if (f1.rfind(soldir, 0) != 0) {
+      std::cerr << "\033[41;37;1mWARNING!\033[0m The snapshot is using a "
+                   "different directory with the solutions!"
+                << std::endl;
+      std::cerr
+          << "The snapshot is using: "
+          << std::filesystem::path(f1).parent_path().parent_path().string()
+          << std::endl;
+      std::cerr << "You are using: " << soldir << std::endl;
+      std::cerr << "Are you sure to continue? [yn] " << std::flush;
+      std::string prompt;
+      std::cin >> prompt;
+      if (prompt != "y") {
+        std::cerr << "quitting..." << std::endl;
+        return false;
       }
     }
   }
-  save_snap(files.size() - 1, hi, lo,
-            targetdir + "/snap" + std::to_string(wid));
+  return true;
 }
 
 int main(int argc, char **argv) {
@@ -109,35 +64,12 @@ int main(int argc, char **argv) {
 
   std::filesystem::create_directories(target_path);
 
-  std::vector<std::string> ranking;
-  std::ifstream ranking_file(ranking_path);
-  std::string user;
-  while (ranking_file >> user) {
-    ranking.push_back(user);
-  }
+  std::cerr << "Reading the ranking file..." << std::endl;
+  std::vector<std::string> ranking = read_ranking(ranking_path);
 
   std::cerr << "Checking local snapshots..." << std::endl;
-  std::set<info_t, std::greater<info_t>> partial_hi, partial_lo;
+  partial_t partial_hi, partial_lo;
   size_t resume_index = std::numeric_limits<size_t>::max();
-  auto read_snap = [&](const auto &path, bool partial) {
-    float perc;
-    std::string a, b;
-    std::ifstream in(path);
-    size_t index;
-    in >> index;
-    if (!partial || resume_index == std::numeric_limits<size_t>::max())
-      resume_index = std::min(resume_index, index);
-    size_t num_hi, num_lo;
-    in >> num_hi >> num_lo;
-    for (size_t i = 0; i < num_hi; i++) {
-      in >> perc >> a >> b;
-      partial_hi.emplace(perc, a, b);
-    }
-    for (size_t i = 0; i < num_lo; i++) {
-      in >> perc >> a >> b;
-      partial_lo.emplace(perc, a, b);
-    }
-  };
 
   for (auto &f : std::filesystem::directory_iterator(target_path)) {
     auto path = f.path();
@@ -146,42 +78,24 @@ int main(int argc, char **argv) {
       std::cerr << "Partial snapshot found... ignoring " << path << std::endl;
     } else if (name.rfind("snap", 0) == 0) {
       std::cerr << "Loading snapshot from " << path << std::endl;
-      read_snap(path, false);
+      read_snap(path.string(), false, resume_index, partial_hi, partial_lo);
     }
   }
   if (std::filesystem::exists(target_path + "/partial")) {
     std::cerr << "Loading partial results from " << target_path + "/partial"
               << std::endl;
-    read_snap(target_path + "/partial", true);
+    read_snap(target_path + "/partial", true, resume_index, partial_hi,
+              partial_lo);
   }
   if (resume_index == std::numeric_limits<size_t>::max())
     resume_index = 0;
+
   // prune partial results
-  if (partial_hi.size() > MAX_RESULTS)
-    partial_hi.erase(std::next(partial_hi.begin(), MAX_RESULTS),
-                     partial_hi.end());
-  if (partial_lo.size() > MAX_RESULTS)
-    partial_lo.erase(std::next(partial_lo.begin(), MAX_RESULTS),
-                     partial_lo.end());
-  if (!partial_hi.empty()) {
-    auto &[perc, f1, f2] = *partial_hi.begin();
-    if (f1.rfind(soldir, 0) != 0) {
-      std::cerr << "\033[41;37;1mWARNING!\033[0m The snapshot is using a different directory with "
-                   "the solutions!"
-                << std::endl;
-      std::cerr
-          << "The snapshot is using: "
-          << std::filesystem::path(f1).parent_path().parent_path().string()
-          << std::endl;
-      std::cerr << "You are using: " << soldir << std::endl;
-      std::cerr << "Are you sure to continue? [yn] " << std::flush;
-      std::string prompt;
-      std::cin >> prompt;
-      if (prompt != "y") {
-        std::cerr << "quitting..." << std::endl;
-        return 1;
-      }
-    }
+  prune_extra_results(partial_hi);
+  prune_extra_results(partial_lo);
+  // make sure the snapshot used the same solution directory
+  if (!ensure_snap_same_task(partial_hi, soldir)) {
+    return 1;
   }
 
   // save partial results
@@ -203,22 +117,27 @@ int main(int argc, char **argv) {
       }
     }
   }
+  // files are read, since we don't want to print them this mapping is useless
   mapping.clear();
 
   std::cerr << "Total files left: " << tot << std::endl;
 
   int nthreads = std::thread::hardware_concurrency();
   std::cerr << "Using " << nthreads << " threads" << std::endl;
+
   std::vector<std::pair<queue_t, queue_t>> results(nthreads);
   std::vector<std::thread> threads;
   std::vector<size_t> current_index(nthreads);
   std::atomic<size_t> progress(0), global_pos(resume_index);
   auto start = std::chrono::high_resolution_clock::now();
+
+  // spawn all the workers
   for (int i = 0; i < nthreads; i++) {
     threads.emplace_back(worker, &files, cutoff, &global_pos, i, &results[i],
                          &progress, &current_index[i], target_path);
   }
 
+  // meanwhile compute the total number of pairs to process
   size_t num_pairs = 0;
   for (size_t i = resume_index; i < files.size(); i++) {
     num_pairs += files[i].size() * (tot - files[i].size());
@@ -228,6 +147,8 @@ int main(int argc, char **argv) {
   printf(" pairs %8ld / %ld (%6.2f%%) | user %4ld / %4ld\r", progress.load(),
          num_pairs, 0.0, global_pos.load() - nthreads, ranking.size());
 
+  // UI loop, print the progress in one line using `\r` for going back to the
+  // start of the line
   while (progress < num_pairs) {
     if (progress) {
       int delta = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -237,7 +158,7 @@ int main(int argc, char **argv) {
       int h = delta / 3600;
       int m = (delta % 3600) / 60;
       int s = delta % 60;
-      printf(" pairs %8ld / %ld (%6.2f%%) | user %4ld / %4ld | ETA "
+      printf("\033[J pairs %8ld / %ld (%6.2f%%) | user %4ld / %4ld | ETA "
              "%4d:%02d:%02d | cur",
              progress.load(), num_pairs, progress * 100.0 / num_pairs,
              global_pos.load() - nthreads, ranking.size(), h, m, s);
@@ -253,20 +174,18 @@ int main(int argc, char **argv) {
          progress.load(), num_pairs, 0.0, global_pos.load() - nthreads,
          ranking.size());
 
+  // since progress >= num_pairs we know that all threads have finished
   for (auto &thread : threads) {
     thread.join();
   }
 
+  // merge the partial results of each thread with the previous partial results
   for (auto &[hi, lo] : results) {
     partial_hi.insert(hi.begin(), hi.end());
     partial_lo.insert(lo.begin(), lo.end());
   }
-  if (partial_hi.size() > MAX_RESULTS)
-    partial_hi.erase(std::next(partial_hi.begin(), MAX_RESULTS),
-                     partial_hi.end());
-  if (partial_lo.size() > MAX_RESULTS)
-    partial_lo.erase(std::next(partial_lo.begin(), MAX_RESULTS),
-                     partial_lo.end());
+  prune_extra_results(partial_hi);
+  prune_extra_results(partial_lo);
   save_snap(global_pos.load(), partial_hi, partial_lo,
             target_path + "/partial");
   save_snap(global_pos.load(), partial_hi, partial_lo, target_path + "/total");
