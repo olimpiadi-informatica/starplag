@@ -85,7 +85,7 @@ void worker(std::vector<std::vector<file_t>> *files_ptr, size_t cutoff,
         pq.push_back(best);
         std::push_heap(pq.begin(), pq.end(), std::greater<info_t>());
         if (pq.size() > MAX_RESULTS) {
-          std::pop_heap(pq.begin(), pq.end());
+          std::pop_heap(pq.begin(), pq.end(), std::greater<info_t>());
           pq.pop_back();
         }
       }
