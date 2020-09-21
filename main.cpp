@@ -16,6 +16,8 @@
 #include <tuple>
 #include <vector>
 
+const float TEMPLATE_PERC_THRESHOLD = 95.0;
+
 std::vector<std::string> read_ranking(std::string ranking_path) {
   std::vector<std::string> ranking;
   std::ifstream ranking_file(ranking_path);
@@ -94,21 +96,32 @@ file_list_t read_files(std::string soldir,
   }
 
   std::cerr << "Comparing files with templates..." << std::endl;
-  std::atomic<size_t> pos(resume_index), files_done(0);
+  std::atomic<size_t> pos(resume_index), files_done(0), files_ignored(0);
   size_t nthreads = std::thread::hardware_concurrency();
   std::vector<std::thread> threads;
 
   for (size_t t = 0; t < nthreads; t++) {
-    threads.emplace_back([&files, &ranking, &templates, &pos, &files_done]() {
-      for (size_t u = pos++; u < ranking.size(); u = pos++) {
-        for (auto &[file, perc] : files[u]) {
-          for (const file_t &templ : templates) {
-            perc = std::max(perc, smart_dist(file, templ));
+    threads.emplace_back(
+        [&files, &ranking, &templates, &pos, &files_done, &files_ignored]() {
+          for (size_t u = pos++; u < ranking.size(); u = pos++) {
+            std::vector<size_t> to_remove;
+            for (size_t i = 0; i < files[u].size(); i++) {
+              auto &[file, perc] = files[u][i];
+              for (const file_t &templ : templates) {
+                perc = std::max(perc, smart_dist(file, templ, 0.0));
+              }
+              if (perc > TEMPLATE_PERC_THRESHOLD) {
+                to_remove.push_back(i);
+              }
+            }
+            files_done += files[u].size();
+            for (ssize_t i = to_remove.size() - 1; i >= 0; i--) {
+              std::swap(files[u][to_remove[i]], files[u].back());
+              files[u].pop_back();
+            }
+            files_ignored += to_remove.size();
           }
-        }
-        files_done += files[u].size();
-      }
-    });
+        });
   }
   auto start = std::chrono::high_resolution_clock::now();
   while (files_done < num_files) {
@@ -127,9 +140,9 @@ file_list_t read_files(std::string soldir,
   for (auto &thread : threads) {
     thread.join();
   }
-  fprintf(stderr, "\033[J files %6ld / %6ld (%6.2f%%) | user %4ld / %4ld\r",
+  fprintf(stderr, "\033[J files %6ld / %6ld (%6.2f%%) | user %4ld / %4ld\n",
           num_files, num_files, 100.0, ranking.size(), ranking.size());
-  std::cerr << std::endl;
+  std::cerr << "Ignored " << files_ignored << " files" << std::endl;
   return files;
 }
 
