@@ -8,7 +8,7 @@ build/compare: compare.cpp ${headers} Makefile
 
 build/main: main.cpp ${headers} Makefile
 	mkdir -p build
-	g++ -fsanitize=address -march=native -pthread -std=c++17 -g -O3 -Wall -Wextra main.cpp -o build/main
+	g++ -march=native -pthread -std=c++17 -g -O3 -Wall -Wextra main.cpp -o build/main
 
 build/pisa: main.cpp ${headers} Makefile
 	mkdir -p build
