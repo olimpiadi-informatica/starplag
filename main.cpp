@@ -80,8 +80,12 @@ file_list_t read_files(std::string soldir,
   size_t num_files = 0;
 
   for (size_t u = resume_index; u < ranking.size(); u++) {
+    std::string dir = soldir + "/" + ranking[u];
+    if (!std::filesystem::exists(dir)) {
+        continue;
+    }
     for (const auto &path :
-         std::filesystem::directory_iterator(soldir + "/" + ranking[u])) {
+         std::filesystem::directory_iterator(dir)) {
       const size_t THRESHOLD = 32 * 1024;
       auto size = std::filesystem::file_size(path.path());
       if (size <= THRESHOLD) {
