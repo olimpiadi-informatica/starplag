@@ -78,23 +78,25 @@ file_list_t read_files(std::string soldir,
                        size_t resume_index) {
   file_list_t files(ranking.size());
   size_t num_files = 0;
-
-  for (size_t u = resume_index; u < ranking.size(); u++) {
-    std::string dir = soldir + "/" + ranking[u];
-    if (!std::filesystem::exists(dir)) {
+  for (const auto &entry : std::filesystem::directory_iterator(soldir)) {
+    std::string group_name = entry.path().filename();
+    for (size_t u = resume_index; u < ranking.size(); u++) {
+      std::string dir = soldir + "/" + group_name + "/" + ranking[u];
+      if (!std::filesystem::exists(dir)) {
         continue;
-    }
-    for (const auto &path :
-         std::filesystem::directory_iterator(dir)) {
-      const size_t THRESHOLD = 32 * 1024;
-      auto size = std::filesystem::file_size(path.path());
-      if (size <= THRESHOLD) {
-        file_t file(path.path());
-        files[u].emplace_back(file, 0);
-        num_files++;
-      } else {
-        std::cerr << "Ignoring too big file " << path.path().string() << ": "
-                  << size << " > " << THRESHOLD << std::endl;
+      }
+      for (const auto &path : std::filesystem::directory_iterator(dir)) {
+        const size_t THRESHOLD = 32 * 1024;
+        auto size = std::filesystem::file_size(path.path());
+        if (size <= THRESHOLD) {
+          file_t file(path.path());
+          file.group = group_name;
+          files[u].emplace_back(file, 0);
+          num_files++;
+        } else {
+          std::cerr << "Ignoring too big file " << path.path().string() << ": "
+                    << size << " > " << THRESHOLD << std::endl;
+        }
       }
     }
   }

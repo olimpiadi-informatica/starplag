@@ -41,7 +41,9 @@ void worker(file_list_t *files_ptr, size_t cutoff,
       info_t best = {-1, "", ""};
       for (const auto &[f1, p1] : files[index]) {
         for (const auto &[f2, p2] : files[j]) {
-          float perc = smart_dist(f1, f2);
+          float perc = 0.0;
+          if (f1.group == f2.group)
+            perc = smart_dist(f1, f2);
           // the solutions are more similar to a template than they are between
           // each other
           if (perc < p1 || perc < p2) {

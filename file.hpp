@@ -40,6 +40,7 @@ std::string replace_all(std::string s, const std::string &c,
 struct file_t {
   using content_t = std::vector<key_t>;
 
+  std::string group;
   std::string path;
   content_t content;
   std::vector<std::string> spaces;
