@@ -3,15 +3,16 @@
 ## Instructions
 
 1. Extract the solutions using the following structure: `.../task/user/subs.cpp`
-    - From terry you can use `terry/util/extract_solutions.py folder/with/zips/ target/folder/ --all --source-only --no-group-venue --ignore0`
+    - From terry you can use `util/terry_extract_solutions.py folder/with/zips/ target/folder/ --all --source-only --no-group-venue --ignore0`
+    - From cms you can use `util/from_cms.py folder/with/zips/ target/folder/ --ignore0` (you can use `--same-school` to check only between solutions of the same school)
     - Ignoring the solutions that score 0 will make much cleaner results
-2. Prepare a folder with the templates given to the contestants, grouped by task (e.g. `.../task/template1.cpp`)
+2. Prepare a folder with the templates given to the contestants, grouped by task (e.g. `.../task/template1.cpp`). You can use `util/get_templates.sh round_folder`
 3. Put the ranking of the contest in a text file:
     - Each line must contain a single word: the id of the user, the same as step 1
     - The ranking must be sorted from the top ranked
 4. Compile `starplag` by issuing `make`
 5. Run `./build/main path/to/task/ path/to/templates/of/task/ path/to/ranking.txt cutoff path/to/target/folder/`
-    - The `cutoff` should be the limit of the ranking where you want to focus the most effort (e.g. top 200)
+    - The `cutoff` should be the limit of the ranking where you want to focus the most effort (e.g. top 200).
     - `path/to/target/folder/` will contain the results of the execution as well as the snapshots of the computation used in case of crash
 6. After the execution ends a file named `total` is created inside the target folder
     - The first line contains the number of processed user, the number of matches `H` found before the cutoff (limited to 500) and the number of matches `L` found after the cutoff (limited to 500)
