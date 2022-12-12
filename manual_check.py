@@ -19,7 +19,7 @@ def main(args):
         with open(args.cache) as f:
             for line in f.read().splitlines():
                 x = line.split()  # file1 file2 outcome
-                outcome = "".join(x[2:])
+                outcome = " ".join(x[2:])
                 done[(x[0], x[1])] = outcome
 
     cache = open(args.cache, "a")
