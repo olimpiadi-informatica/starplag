@@ -4,6 +4,9 @@
 #include "subs_dist.hpp"
 
 float smart_dist(const file_t &file1, const file_t &file2, float space_weight = 0.3) {
+  if (file1.group != file2.group) {
+    return 0;
+  }
   auto [subs, add_del_dist, space_dist, _1, _2, _3, _4] =
       root_subs(file1, file2);
   int token_dist = add_del_dist + subs_dist(subs);
