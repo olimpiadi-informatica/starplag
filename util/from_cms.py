@@ -8,10 +8,11 @@ import shutil
 
 
 def main(args):
-    os.chdir(args.source)
+    # os.chdir(args.source)
     os.makedirs(args.dest, exist_ok=False)
-    files = glob.glob("*")
-    for file in files:
+    # files = glob.glob(os.path.join(args.source,"*"))
+    for file in os.listdir(args.source):
+        file = os.path.join(args.source, file)
         if not os.path.isfile(file):
             continue
         with open(file, "r") as f:
@@ -28,7 +29,7 @@ def main(args):
         else:
             path = os.path.join(args.dest, task, "all", user)
         os.makedirs(path, exist_ok=True)
-        shutil.copy(file, os.path.join(path, file))
+        shutil.copy(file, os.path.join(path, os.path.basename(file)))
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 
 1. Extract the solutions using the following structure: `.../task/user/subs.cpp`
     - From terry you can use `util/extract_solutions.py folder/with/zips/ target/folder/ --all --source-only --no-group-venue --ignore0` (from `algorithm-ninja/terry`)
-    - From cms you can use `util/from_cms.py folder/with/zips/ target/folder/ --ignore0` (you can use `--same-school` to check only between solutions of the same school)
+    - From cms you can use `util/from_cms.py folder/with/solutions/ target/folder/ --ignore0` (you can use `--same-school` to check only between solutions of the same school)
     - Ignoring the solutions that score 0 will make much cleaner results
 2. Prepare a folder with the templates given to the contestants, grouped by task (e.g. `.../task/template1.cpp`). You can use `util/get_templates.sh round_folder`
 3. Put the ranking of the contest in a text file:
