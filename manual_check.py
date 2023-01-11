@@ -27,9 +27,14 @@ def main(args):
         print("output.tsv already exists")
         exit(0)
     output = open("output.tsv", "w")
+    cheaters = set()
     for name, lst in [("HIGH", hi), ("LOW", lo)]:
         for _, f1, f2 in lst:
             if (f1, f2) in done:
+                continue
+            d1 = os.path.dirname(f1)
+            d2 = os.path.dirname(f2)
+            if d1 in cheaters and d2 in cheaters:
                 continue
             subprocess.run(["./build/compare", f1, f2, "data/left", "data/right", "data/meta"],
                            check=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
@@ -47,6 +52,9 @@ def main(args):
                 cache.write("%s %s %s\n" % (f1, f2, outcome))
                 cache.flush()
                 done[(f1, f2)] = outcome
+                if outcome == "y":
+                    cheaters.add(d1)
+                    cheaters.add(d2)
             else:
                 break
     for (f1, f2), outcome in done.items():
