@@ -2,7 +2,7 @@
 set -e
 if [[ $# != 1 ]]; then
     echo "Usage: $0 round_folder"
-    echo "Creates fordels templates/task_name/file.*"
+    echo "Creates folders templates/task_name/file.*"
     exit 1
 fi
 

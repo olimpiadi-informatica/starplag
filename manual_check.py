@@ -23,10 +23,7 @@ def main(args):
                 done[(x[0], x[1])] = outcome
 
     cache = open(args.cache, "a")
-    if os.path.exists("output.tsv"):
-        print("output.tsv already exists")
-        exit(0)
-    output = open("output.tsv", "w")
+    output = open("output.tsv", "a")
     cheaters = set()
     for name, lst in [("HIGH", hi), ("LOW", lo)]:
         for _, f1, f2 in lst:
