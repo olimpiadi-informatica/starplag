@@ -3,8 +3,12 @@
 #include "root_subs.hpp"
 #include "subs_dist.hpp"
 
+bool is_template(const file_t &file) {
+  return file.path.find("template") != std::string::npos;
+}
+
 float smart_dist(const file_t &file1, const file_t &file2, float space_weight = 0.3) {
-  if (file1.group != file2.group) {
+  if (file1.group != file2.group && !is_template(file1) && !is_template(file2)) {
     return 0;
   }
   auto [subs, add_del_dist, space_dist, _1, _2, _3, _4] =
